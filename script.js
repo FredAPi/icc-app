@@ -135,7 +135,7 @@ let periodEnd = '';
   enregistrées sous forme de tableau d'objets contenant :
     - store       : nom de la boutique
     - name        : prénom de la personne ayant réalisé le contrôle
-    - date        : date de vérification (format AAAA-MM-JJ)
+    - date        : date de vérification (format JJ-MM-AAAA)
     - periodStart : date de début de la période (format JJ/MM/AAAA)
     - periodEnd   : date de fin de la période (format JJ/MM/AAAA)
 
