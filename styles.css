@@ -1,0 +1,291 @@
+/*
+  Feuille de style principale pour l'application de contrôle ICC.
+  Les variables définies ici permettent de modifier rapidement les couleurs
+  et la mise en page. N'hésitez pas à ajuster ces valeurs pour
+  personnaliser l'apparence de l'application.
+*/
+
+:root {
+  /* Couleurs principales */
+  --primary-color: #009fe3; /* Bleu vif */
+  --secondary-color: #5e72eb; /* Violet doux */
+  --accent-color: #00c49a; /* Vert turquoise */
+  --error-color: #ff5252; /* Rouge pour les erreurs */
+  --bg-color: #f7f9fc; /* Fond clair */
+  --card-bg: #ffffff; /* Couleur de carte */
+  --text-color: #222831; /* Texte principal */
+  --muted-color: #666; /* Texte secondaire */
+  --border-radius: 12px;
+  --shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Réinitialisation de base */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  /* Utilise la police Poppins pour un style moderne */
+  font-family: 'Poppins', 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
+}
+
+body {
+  /* Fond en dégradé pour plus de modernité */
+  background: linear-gradient(180deg, var(--bg-color) 0%, #e6ecfe 100%);
+  color: var(--text-color);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+header {
+  text-align: center;
+  padding: 2rem 1rem 1rem;
+  background: linear-gradient(
+    135deg,
+    var(--primary-color) 0%,
+    var(--secondary-color) 100%
+  );
+  color: #fff;
+}
+
+header h1 {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+}
+
+header .subtitle {
+  font-size: 1rem;
+  opacity: 0.9;
+}
+
+main {
+  flex: 1;
+  padding: 2rem 1rem;
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.card {
+  /* Fond légèrement dégradé et coins plus arrondis */
+  background: linear-gradient(135deg, #ffffff 0%, #f4f7ff 100%);
+  border-radius: calc(var(--border-radius) + 4px);
+  box-shadow: var(--shadow);
+  margin-bottom: 1.5rem;
+  padding: 1rem 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.08);
+}
+
+.card .info {
+  display: flex;
+  align-items: center;
+}
+
+.card .icon {
+  font-size: 2.2rem;
+  margin-right: 1rem;
+}
+
+.card .title {
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.card .status {
+  font-size: 1.2rem;
+}
+
+.status.done {
+  color: var(--accent-color);
+}
+.status.todo {
+  color: var(--primary-color);
+}
+.status.warning {
+  color: #ff9800;
+}
+.status.error {
+  color: var(--error-color);
+}
+
+/* Bordure colorée sur les cartes selon le statut */
+.card.todo {
+  border-left: 4px solid var(--primary-color);
+}
+
+.card.done {
+  border-left: 4px solid var(--accent-color);
+}
+
+.card.error {
+  border-left: 4px solid var(--error-color);
+}
+
+/* Progression */
+/* Conteneur de progression : on passe d'une barre horizontale à un cercle */
+/* Conteneur de progression : centre le cercle et ajoute un peu plus de marge */
+.progress-container {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+}
+
+/* Cercle de progression dynamique */
+/* Cercle de progression dynamique agrandi et centré */
+.progress-circle {
+  position: relative;
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  background: conic-gradient(
+    var(--secondary-color) 0% 0%,
+    #e0e7ff 0% 100%
+  );
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--primary-color);
+  /* Ombre douce pour un effet flottant */
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
+}
+
+.progress-circle span {
+  position: absolute;
+  display: block;
+  text-align: center;
+  width: 100%;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* Bouton principal */
+.primary-button {
+  display: inline-block;
+  padding: 0.8rem 1.4rem;
+  /* Nouveau dégradé pour plus de peps */
+  background: linear-gradient(
+    90deg,
+    var(--primary-color) 0%,
+    var(--accent-color) 100%
+  );
+  color: #fff;
+  border: none;
+  border-radius: var(--border-radius);
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.primary-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Modale */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
+  z-index: 1000;
+}
+
+.modal-overlay.active {
+  visibility: visible;
+  opacity: 1;
+}
+
+.modal {
+  background-color: var(--card-bg);
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow);
+  padding: 1.5rem;
+  width: 90%;
+  max-width: 600px;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.modal-header h2 {
+  font-size: 1.4rem;
+}
+
+.modal-close {
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: var(--muted-color);
+}
+
+.modal-content p {
+  margin-bottom: 1rem;
+  line-height: 1.5;
+}
+
+.modal-content textarea {
+  width: 100%;
+  min-height: 80px;
+  padding: 0.5rem;
+  border-radius: var(--border-radius);
+  border: 1px solid #ccc;
+  resize: vertical;
+  margin-top: 0.5rem;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.modal-actions button {
+  padding: 0.6rem 1rem;
+  border: none;
+  border-radius: var(--border-radius);
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.modal-actions .cancel-btn {
+  background: #f1f1f1;
+  color: var(--text-color);
+}
+.modal-actions .save-btn {
+  background: var(--accent-color);
+  color: #fff;
+}
+
+/* Footer */
+footer {
+  text-align: center;
+  font-size: 0.8rem;
+  padding: 1rem;
+  background-color: var(--bg-color);
+  color: var(--muted-color);
+}
