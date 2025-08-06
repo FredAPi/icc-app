@@ -20,7 +20,7 @@
 // ======== Données et état global ========
 
 // Liste des boutiques disponibles. Permet de choisir pour quel magasin effectuer l'audit.
-const stores = ['Disney Store', 'Disney & CO', 'Emporium'];
+const stores = ['Disney Style Complex', 'Disney Store', 'World of Disney', 'Disney & CO Complex', 'Emporium'];
 
 // Variable globale pour stocker la boutique sélectionnée
 let selectedStore = '';
