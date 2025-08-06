@@ -19,8 +19,67 @@
 
 // ======== Données et état global ========
 
-// Liste des boutiques disponibles. Permet de choisir pour quel magasin effectuer l'audit.
-const stores = ['Disney Style Complex', 'Disney Store', 'World of Disney', 'Disney & CO Complex', 'Emporium'];
+// ----- Gestion dynamique des boutiques et des codes -----
+// Nous stockons désormais la liste des boutiques et leurs codes dans le localStorage.
+// Ceci permet d'ajouter, supprimer ou modifier des boutiques via l'interface admin et de
+// persister ces informations entre les sessions. Chaque entrée contient un nom de boutique
+// et le code d'accès associé.
+
+/**
+ * Charge la liste des boutiques depuis le localStorage.
+ * Si aucune liste n'est trouvée, renvoie une liste par défaut avec des codes simples.
+ * Chaque objet a la forme : { name: string, code: string }
+ */
+function loadStoreList() {
+  try {
+    const data = localStorage.getItem('iccStoreList');
+    if (data) {
+      const parsed = JSON.parse(data);
+      // vérifie que la structure est correcte
+      if (Array.isArray(parsed) && parsed.every((item) => item.name && item.code)) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.error('Erreur de chargement des boutiques :', e);
+  }
+  // liste par défaut avec des codes génériques
+  return [
+    { name: 'Disney Store', code: '1234' },
+    { name: 'Disney & CO', code: '5678' },
+    { name: 'Emporium', code: '91011' },
+  ];
+}
+
+/**
+ * Sauvegarde la liste des boutiques dans le localStorage.
+ * @param {Array<{name: string, code: string}>} list
+ */
+function saveStoreList(list) {
+  try {
+    localStorage.setItem('iccStoreList', JSON.stringify(list));
+  } catch (e) {
+    console.error('Erreur d\'enregistrement des boutiques :', e);
+  }
+}
+
+// Liste dynamique des boutiques (objet {name, code})
+let storeList = loadStoreList();
+
+// Construit un tableau contenant uniquement les noms pour le menu déroulant
+let stores = storeList.map((s) => s.name);
+
+/**
+ * Renvoie le code associé à une boutique donnée.
+ * @param {string} storeName
+ */
+function getStoreCode(storeName) {
+  const found = storeList.find((s) => s.name === storeName);
+  return found ? found.code : '';
+}
+
+// Mot de passe admin pour accéder au panneau de gestion. Vous pouvez le modifier à votre convenance.
+const ADMIN_PASSWORD = 'admin123';
 
 // Variable globale pour stocker la boutique sélectionnée
 let selectedStore = '';
@@ -491,6 +550,11 @@ function renderPreCheck() {
   const title = document.createElement('h2');
   title.textContent = 'Informations avant la vérification';
   title.style.marginBottom = '1rem';
+  // Avant toute chose, recharge la liste des boutiques pour refléter les éventuelles
+  // modifications apportées par l'administrateur
+  storeList = loadStoreList();
+  stores = storeList.map((s) => s.name);
+
   // Champ boutique (menu déroulant)
   const storeLabel = document.createElement('label');
   storeLabel.textContent = 'Boutique :';
@@ -511,6 +575,27 @@ function renderPreCheck() {
     opt.textContent = store;
     storeSelect.appendChild(opt);
   });
+
+  // Champ code d'accès pour la boutique sélectionnée
+  const codeLabel = document.createElement('label');
+  codeLabel.textContent = 'Code boutique :';
+  codeLabel.style.marginTop = '0.8rem';
+  codeLabel.style.display = 'none';
+  const codeInput = document.createElement('input');
+  codeInput.type = 'password';
+  codeInput.placeholder = 'Code de la boutique';
+  codeInput.style.marginTop = '0.25rem';
+  codeInput.style.padding = '0.6rem';
+  codeInput.style.borderRadius = 'var(--border-radius)';
+  codeInput.style.border = '1px solid #ccc';
+  codeInput.style.display = 'none';
+  // Message d'erreur pour le code
+  const codeMessage = document.createElement('p');
+  codeMessage.style.fontSize = '0.85rem';
+  codeMessage.style.color = 'var(--error-color)';
+  codeMessage.style.marginTop = '0.25rem';
+  codeMessage.style.display = 'none';
+  codeMessage.textContent = 'Code incorrect';
 
   // Élément pour afficher la dernière vérification de la boutique
   const latestInfo = document.createElement('p');
@@ -562,26 +647,51 @@ function renderPreCheck() {
   });
   // Activer le bouton si les trois champs sont remplis
   const checkFormValidity = () => {
+    const selectedVal = storeSelect.value;
+    // Affiche ou masque le champ code selon qu'une boutique est choisie
+    if (selectedVal) {
+      codeLabel.style.display = 'block';
+      codeInput.style.display = 'block';
+    } else {
+      codeLabel.style.display = 'none';
+      codeInput.style.display = 'none';
+      codeMessage.style.display = 'none';
+      codeInput.value = '';
+    }
+    // Vérification du code d'accès
+    let codeOk = true;
+    if (selectedVal) {
+      const expectedCode = getStoreCode(selectedVal);
+      codeOk = codeInput.value === expectedCode;
+      if (codeInput.value === '') {
+        // Pas encore saisi, pas d'erreur
+        codeMessage.style.display = 'none';
+      } else if (!codeOk) {
+        codeMessage.style.display = 'block';
+      } else {
+        codeMessage.style.display = 'none';
+      }
+    }
     // Vérifie si une entrée existe déjà pour cette boutique et cette date
-    const duplicate = storeSelect.value && dateInput.value ? findEntry(storeSelect.value, dateInput.value) : null;
-    // Si c'est un doublon, désactive le bouton continuer et affiche le bouton consulter
-    if (duplicate) {
+    const duplicate = selectedVal && dateInput.value ? findEntry(selectedVal, dateInput.value) : null;
+    // Pour des raisons de sécurité, on n'affiche le bouton « consulter les résultats » que si
+    // le code d'accès est correct. Ainsi, un utilisateur ne peut pas consulter les audits
+    // d'une autre boutique sans connaître le code.
+    if (duplicate && codeOk) {
       continueBtn.disabled = true;
       viewResultsBtn.style.display = 'inline-block';
       latestInfo.style.display = 'block';
-      // Définit le texte pour la dernière vérification si ce n'est pas déjà fait
-      const latest = findLatestForStore(storeSelect.value);
+      const latest = findLatestForStore(selectedVal);
       if (latest) {
         latestInfo.textContent = `Dernière vérification le ${latest.date} par ${latest.name} (Période couverte du ${latest.periodStart} au ${latest.periodEnd})`;
       }
-      // Affecte l'action au bouton consulter
       viewResultsBtn.onclick = () => viewExistingEntry(duplicate);
     } else {
-      // Pas de doublon : masque le bouton consulter
+      // Pas de doublon ou code incorrect : masque le bouton consulter
       viewResultsBtn.style.display = 'none';
-      // Met à jour la dernière vérification (affichée si une boutique est sélectionnée)
-      if (storeSelect.value) {
-        const latest = findLatestForStore(storeSelect.value);
+      // Met à jour la dernière vérification si une boutique est sélectionnée (affichée même si code pas encore saisi)
+      if (selectedVal) {
+        const latest = findLatestForStore(selectedVal);
         if (latest) {
           latestInfo.style.display = 'block';
           latestInfo.textContent = `Dernière vérification le ${latest.date} par ${latest.name} (Période couverte du ${latest.periodStart} au ${latest.periodEnd})`;
@@ -592,25 +702,39 @@ function renderPreCheck() {
       } else {
         latestInfo.style.display = 'none';
       }
-      // Active ou désactive le bouton suivant selon les champs remplis
-      continueBtn.disabled =
-        nameInput.value.trim() === '' || dateInput.value === '' || storeSelect.value === '';
     }
+    // Active ou désactive le bouton continuer selon les champs remplis et le code valide
+    continueBtn.disabled =
+      nameInput.value.trim() === '' || dateInput.value === '' || selectedVal === '' || !codeOk;
   };
   nameInput.addEventListener('input', checkFormValidity);
   dateInput.addEventListener('input', checkFormValidity);
   storeSelect.addEventListener('change', checkFormValidity);
+  codeInput.addEventListener('input', checkFormValidity);
   // Assemblage
   formCard.appendChild(title);
   formCard.appendChild(storeLabel);
   formCard.appendChild(storeSelect);
   formCard.appendChild(latestInfo);
   formCard.appendChild(viewResultsBtn);
+  // Ajout du champ code boutique (caché par défaut)
+  formCard.appendChild(codeLabel);
+  formCard.appendChild(codeInput);
+  formCard.appendChild(codeMessage);
   formCard.appendChild(nameLabel);
   formCard.appendChild(nameInput);
   formCard.appendChild(dateLabel);
   formCard.appendChild(dateInput);
   formCard.appendChild(continueBtn);
+  // Bouton admin pour accéder au panneau de gestion
+  const adminBtn = document.createElement('button');
+  adminBtn.className = 'primary-button';
+  adminBtn.textContent = 'Admin';
+  adminBtn.style.marginTop = '0.75rem';
+  adminBtn.addEventListener('click', () => {
+    renderAdminLogin();
+  });
+  formCard.appendChild(adminBtn);
   appContainer.appendChild(formCard);
 
   // Mise à jour initiale de la ligne de dernière vérification
@@ -865,6 +989,221 @@ function sendResultsByEmail() {
   const mailtoLink = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   // Ouvre le lien mailto pour composer l'email
   window.location.href = mailtoLink;
+}
+
+// ------------------ Administration ------------------ //
+
+/*
+  Affiche un écran de connexion pour l'administrateur. L'utilisateur doit saisir
+  le mot de passe admin pour accéder au panneau de gestion des boutiques.
+*/
+function renderAdminLogin() {
+  currentAppState = 'adminLogin';
+  appContainer.innerHTML = '';
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.style.flexDirection = 'column';
+  card.style.maxWidth = '400px';
+  card.style.margin = '0 auto';
+  card.style.textAlign = 'center';
+  const title = document.createElement('h2');
+  title.textContent = 'Connexion administrateur';
+  title.style.marginBottom = '1rem';
+  const label = document.createElement('label');
+  label.textContent = 'Mot de passe :';
+  label.style.marginTop = '0.5rem';
+  label.style.alignSelf = 'flex-start';
+  const pwdInput = document.createElement('input');
+  pwdInput.type = 'password';
+  pwdInput.placeholder = 'Mot de passe admin';
+  pwdInput.style.marginTop = '0.25rem';
+  pwdInput.style.padding = '0.6rem';
+  pwdInput.style.borderRadius = 'var(--border-radius)';
+  pwdInput.style.border = '1px solid #ccc';
+  pwdInput.style.width = '100%';
+  const btnContainer = document.createElement('div');
+  btnContainer.style.display = 'flex';
+  btnContainer.style.justifyContent = 'flex-end';
+  btnContainer.style.gap = '0.5rem';
+  btnContainer.style.marginTop = '1rem';
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'primary-button';
+  cancelBtn.textContent = 'Retour';
+  cancelBtn.addEventListener('click', () => {
+    // Retour à l'écran de pré-sélection
+    renderPreCheck();
+  });
+  const loginBtn = document.createElement('button');
+  loginBtn.className = 'primary-button';
+  loginBtn.textContent = 'Se connecter';
+  loginBtn.addEventListener('click', () => {
+    if (pwdInput.value === ADMIN_PASSWORD) {
+      renderAdminPanel();
+    } else {
+      alert('Mot de passe incorrect');
+      pwdInput.value = '';
+    }
+  });
+  btnContainer.appendChild(cancelBtn);
+  btnContainer.appendChild(loginBtn);
+  card.appendChild(title);
+  card.appendChild(label);
+  card.appendChild(pwdInput);
+  card.appendChild(btnContainer);
+  appContainer.appendChild(card);
+}
+
+/*
+  Affiche le panneau d'administration permettant de gérer la liste des boutiques
+  (ajout, suppression, modification des codes). Les modifications sont
+  immédiatement persistées dans le localStorage et prises en compte dans
+  l'application.
+*/
+function renderAdminPanel() {
+  currentAppState = 'adminPanel';
+  appContainer.innerHTML = '';
+  // Crée un conteneur principal pour l'interface d'administration. On part d'une
+  // « card » pour conserver le style arrondi et ombré, mais on annule certaines
+  // propriétés de flex qui ne sont pas adaptées à une disposition verticale.
+  const wrapper = document.createElement('div');
+  wrapper.className = 'card';
+  // Force la disposition en colonne et supprime le centrage/espacement par défaut
+  wrapper.style.display = 'flex';
+  wrapper.style.flexDirection = 'column';
+  wrapper.style.alignItems = 'stretch';
+  wrapper.style.justifyContent = 'flex-start';
+  // Laisse la carte occuper toute la largeur disponible jusqu'à 900 px pour mieux
+  // gérer les noms longs. On met margin auto pour la centrer.
+  wrapper.style.maxWidth = '900px';
+  wrapper.style.margin = '0 auto';
+  const title = document.createElement('h2');
+  title.textContent = 'Gestion des boutiques';
+  title.style.marginBottom = '1rem';
+  wrapper.appendChild(title);
+  // Section listant les boutiques existantes
+  storeList.forEach((store, index) => {
+    const row = document.createElement('div');
+    // Utilise un système de grille pour mieux aligner les colonnes et éviter que
+    // les longs noms ne décalent les boutons. La grille comporte quatre colonnes :
+    // nom, code, enregistrer, supprimer. Les deux premières colonnes prennent
+    // chacune deux fractions de l'espace disponible.
+    row.style.display = 'grid';
+    // Alloue plus d'espace à la colonne du nom (3 fractions) afin de réduire les
+    // retours à la ligne lorsque le nom est long. Les autres colonnes conservent
+    // des proportions cohérentes.
+    row.style.gridTemplateColumns = '3fr 2fr auto auto';
+    row.style.alignItems = 'center';
+    row.style.columnGap = '0.5rem';
+    row.style.marginBottom = '0.5rem';
+    // Nom de la boutique
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = store.name;
+    nameSpan.style.fontWeight = '600';
+    // Champ code modifiable
+    const codeInput = document.createElement('input');
+    codeInput.type = 'text';
+    codeInput.value = store.code;
+    codeInput.style.padding = '0.4rem';
+    codeInput.style.borderRadius = 'var(--border-radius)';
+    codeInput.style.border = '1px solid #ccc';
+    // Bouton enregistrer le code
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'primary-button';
+    saveBtn.textContent = 'Enregistrer';
+    saveBtn.addEventListener('click', () => {
+      const newCode = codeInput.value.trim();
+      if (newCode === '') {
+        alert('Le code ne peut pas être vide.');
+        return;
+      }
+      storeList[index].code = newCode;
+      saveStoreList(storeList);
+      alert('Code mis à jour');
+    });
+    // Bouton supprimer la boutique
+    const delBtn = document.createElement('button');
+    delBtn.className = 'primary-button';
+    delBtn.textContent = 'Supprimer';
+    delBtn.style.background = 'var(--error-color)';
+    delBtn.addEventListener('click', () => {
+      const confirmDelete = confirm('Supprimer la boutique "' + store.name + '" ?');
+      if (confirmDelete) {
+        storeList.splice(index, 1);
+        saveStoreList(storeList);
+        // Met à jour la liste des noms
+        stores = storeList.map((s) => s.name);
+        // Rafraîchit l'interface admin
+        renderAdminPanel();
+      }
+    });
+    row.appendChild(nameSpan);
+    row.appendChild(codeInput);
+    row.appendChild(saveBtn);
+    row.appendChild(delBtn);
+    wrapper.appendChild(row);
+  });
+  // Ligne pour ajouter une nouvelle boutique
+  const addRow = document.createElement('div');
+  // Utilise aussi une grille afin d'aligner les colonnes avec les autres lignes (nom, code, bouton)
+  addRow.style.display = 'grid';
+  // Même principe pour la ligne d'ajout : plus de place pour le nom
+  addRow.style.gridTemplateColumns = '3fr 2fr auto';
+  addRow.style.alignItems = 'center';
+  addRow.style.columnGap = '0.5rem';
+  addRow.style.marginTop = '1rem';
+  const newNameInput = document.createElement('input');
+  newNameInput.type = 'text';
+  newNameInput.placeholder = 'Nom de la boutique';
+  // Ne pas utiliser flex sur un élément de la grille : la largeur sera gérée par la grille
+  newNameInput.style.flex = '';
+  newNameInput.style.padding = '0.4rem';
+  newNameInput.style.borderRadius = 'var(--border-radius)';
+  newNameInput.style.border = '1px solid #ccc';
+  const newCodeInput = document.createElement('input');
+  newCodeInput.type = 'text';
+  newCodeInput.placeholder = 'Code d\'accès';
+  // Ne pas utiliser flex sur un élément de la grille : la largeur sera gérée par la grille
+  newCodeInput.style.flex = '';
+  newCodeInput.style.padding = '0.4rem';
+  newCodeInput.style.borderRadius = 'var(--border-radius)';
+  newCodeInput.style.border = '1px solid #ccc';
+  const addBtn = document.createElement('button');
+  addBtn.className = 'primary-button';
+  addBtn.textContent = 'Ajouter';
+  addBtn.addEventListener('click', () => {
+    const nameVal = newNameInput.value.trim();
+    const codeVal = newCodeInput.value.trim();
+    if (nameVal === '' || codeVal === '') {
+      alert('Veuillez saisir un nom et un code.');
+      return;
+    }
+    // Vérifie qu'aucune boutique du même nom n'existe déjà
+    if (storeList.some((s) => s.name === nameVal)) {
+      alert('Une boutique portant ce nom existe déjà.');
+      return;
+    }
+    storeList.push({ name: nameVal, code: codeVal });
+    saveStoreList(storeList);
+    // Met à jour les noms disponibles
+    stores = storeList.map((s) => s.name);
+    // Efface les champs et rafraîchit la page admin
+    renderAdminPanel();
+  });
+  addRow.appendChild(newNameInput);
+  addRow.appendChild(newCodeInput);
+  addRow.appendChild(addBtn);
+  wrapper.appendChild(addRow);
+  // Bouton retour pour quitter le panneau d'admin
+  const backBtn = document.createElement('button');
+  backBtn.className = 'primary-button';
+  backBtn.textContent = 'Retour';
+  backBtn.style.marginTop = '1.5rem';
+  backBtn.addEventListener('click', () => {
+    // recharge la liste mise à jour et revient au formulaire
+    renderPreCheck();
+  });
+  wrapper.appendChild(backBtn);
+  appContainer.appendChild(wrapper);
 }
 
 // ------------------ Initialisation ------------------ //
