@@ -154,14 +154,14 @@ function loadHistory() {
 
 /*
   Retourne l'entrée la plus récente pour une boutique donnée.
-  On compare les dates au format AAAA-MM-JJ pour déterminer la plus grande.
+  On compare les dates au format JJ-MM-AAAA pour déterminer la plus grande.
   Si aucune entrée n'existe, retourne null.
 */
 function findLatestForStore(store) {
   if (!store) return null;
   const history = loadHistory().filter((h) => h.store === store);
   if (history.length === 0) return null;
-  // Trouve l'entrée avec la date la plus récente. Les dates sont en format ISO AAAA-MM-JJ.
+  // Trouve l'entrée avec la date la plus récente. Les dates sont en format JJ-MM-AAAA.
   return history.reduce((latest, entry) => {
     if (!latest) return entry;
     return entry.date > latest.date ? entry : latest;
