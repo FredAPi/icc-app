@@ -302,6 +302,73 @@ let verificationDate = '';
 let periodStart = '';
 let periodEnd = '';
 
+// ================= Vérifications en Supabase ==================
+//
+// Afin de conserver un historique des checklists indépendamment du navigateur,
+// nous enregistrons chaque vérification dans la table "verifications" de Supabase.
+// Chaque enregistrement comporte l'ID et le nom de la boutique, le prénom de la
+// personne ayant réalisé le contrôle, la date du contrôle, la période couverte,
+// les résultats détaillés de la checklist (au format JSON) et un commentaire
+// éventuel. La fonction `enregistrerVerification` effectue cette insertion.
+
+/**
+ * Enregistre une vérification dans Supabase.
+ *
+ * @param {number|null} boutiqueId - l'identifiant de la boutique (peut être null si absent)
+ * @param {string} nomBoutique - le nom de la boutique
+ * @param {string} verificateur - prénom de la personne ayant réalisé l'audit
+ * @param {string} date - date de l'audit (format ISO AAAA-MM-JJ)
+ * @param {string} periodeCouverte - période couverte (ex: "27/07/2025 au 02/08/2025")
+ * @param {Object} resultats - objet JSON contenant les réponses de la checklist
+ * @param {string} commentaire - commentaire global éventuel
+ */
+async function enregistrerVerification(boutiqueId, nomBoutique, verificateur, date, periodeCouverte, resultats, commentaire) {
+  try {
+    const { error } = await supabase.from('verifications').insert([
+      {
+        boutique_id: boutiqueId,
+        nom_boutique: nomBoutique,
+        verificateur: verificateur,
+        date: date,
+        periode_couverte: periodeCouverte,
+        resultats: resultats,
+        commentaire: commentaire || '',
+      },
+    ]);
+    if (error) {
+      console.error('Erreur lors de l\'enregistrement de la vérification dans Supabase :', error);
+    }
+  } catch (err) {
+    console.error('Exception lors de l\'enregistrement de la vérification dans Supabase :', err);
+  }
+}
+
+/**
+ * Récupère les dernières vérifications pour une boutique donnée depuis Supabase.
+ *
+ * @param {number} storeId - l'identifiant de la boutique
+ * @param {number} limit - nombre maximal d'entrées à retourner (facultatif)
+ * @returns {Promise<Array>} - tableau d'objets de vérifications ou [] en cas d'erreur
+ */
+async function fetchVerificationsForStore(storeId, limit = 5) {
+  try {
+    const { data, error } = await supabase
+      .from('verifications')
+      .select('*')
+      .eq('boutique_id', storeId)
+      .order('date', { ascending: false })
+      .limit(limit);
+    if (error) {
+      console.error('Erreur lors de la récupération des vérifications Supabase :', error);
+      return [];
+    }
+    return Array.isArray(data) ? data : [];
+  } catch (err) {
+    console.error('Exception lors de la récupération des vérifications Supabase :', err);
+    return [];
+  }
+}
+
 // ================== Gestion de l'historique ==================
 
 /*
@@ -394,14 +461,33 @@ function saveHistoryEntry(entry) {
   récentes (ordre du tableau). Si aucune donnée n'est trouvée pour
   cette boutique, retourne null.
 */
-function renderHistory() {
+async function renderHistory() {
   if (!selectedStore) return null;
-  const history = loadHistory().filter((h) => h.store === selectedStore);
-  if (history.length === 0) return null;
-  // Inverse pour afficher les plus récentes en premier
-  history.reverse();
-  // Limite à 5 entrées
-  const toShow = history.slice(0, 5);
+  // On va d'abord tenter de récupérer les vérifications depuis Supabase
+  let toShow = [];
+  try {
+    const storeObj = storeList.find((s) => s.name === selectedStore);
+    const storeId = storeObj ? storeObj.id : null;
+    if (storeId) {
+      const verifs = await fetchVerificationsForStore(storeId, 5);
+      // Transforme les enregistrements en structure compatible avec l'affichage
+      toShow = verifs.map((v) => ({
+        name: v.verificateur,
+        date: v.date,
+        periodStart: (v.periode_couverte || '').split(' au ')[0],
+        periodEnd: (v.periode_couverte || '').split(' au ')[1],
+      }));
+    }
+  } catch (err) {
+    console.error('Erreur lors de la récupération de l\'historique Supabase :', err);
+  }
+  // Si Supabase n'a rien retourné, on bascule sur le localStorage
+  if (!toShow || toShow.length === 0) {
+    const history = loadHistory().filter((h) => h.store === selectedStore);
+    if (history.length === 0) return null;
+    history.reverse();
+    toShow = history.slice(0, 5);
+  }
   const wrapper = document.createElement('div');
   wrapper.className = 'card';
   wrapper.style.flexDirection = 'column';
@@ -591,7 +677,7 @@ function openModal(itemId) {
 }
 
 // Affiche l'écran d'accueil
-function renderStart() {
+async function renderStart() {
   currentAppState = APP_STATE.START;
   appContainer.innerHTML = '';
   const introCard = document.createElement('div');
@@ -643,9 +729,13 @@ function renderStart() {
     introCard.appendChild(periodInfo);
   }
   // Affiche l'historique pour la boutique sélectionnée si disponible
-  const historyElem = renderHistory();
-  if (historyElem) {
-    introCard.appendChild(historyElem);
+  try {
+    const historyElem = await renderHistory();
+    if (historyElem) {
+      introCard.appendChild(historyElem);
+    }
+  } catch (err) {
+    console.error('Erreur lors de l\'affichage de l\'historique :', err);
   }
   introCard.appendChild(startBtn);
   appContainer.appendChild(introCard);
@@ -921,7 +1011,7 @@ function renderChecklist() {
 }
 
 // Affiche la page de résumé final
-function renderSummary() {
+async function renderSummary() {
   currentAppState = APP_STATE.SUMMARY;
   appContainer.innerHTML = '';
   // Sauvegarde l'entrée d'historique si ce n'est pas déjà fait
@@ -930,6 +1020,7 @@ function renderSummary() {
     if (!periodStart || !periodEnd) {
       [periodStart, periodEnd] = computeWeekPeriod(verificationDate);
     }
+    // Enregistre l'entrée localement pour conserver un historique hors ligne
     saveHistoryEntry({
       store: selectedStore,
       name: personName,
@@ -940,6 +1031,24 @@ function renderSummary() {
       results: JSON.parse(JSON.stringify(userResponses)),
     });
     hasSavedHistory = true;
+    // Tente également de sauvegarder la vérification sur Supabase pour une persistance centralisée
+    try {
+      const storeObj = storeList.find((s) => s.name === selectedStore);
+      const storeId = storeObj ? storeObj.id : null;
+      const nomBoutique = storeObj ? storeObj.name : selectedStore;
+      const periodeCouverte = periodStart && periodEnd ? `${periodStart} au ${periodEnd}` : '';
+      await enregistrerVerification(
+        storeId,
+        nomBoutique,
+        personName,
+        verificationDate,
+        periodeCouverte,
+        JSON.parse(JSON.stringify(userResponses)),
+        ''
+      );
+    } catch (err) {
+      console.error('Erreur lors de l\'enregistrement de la vérification sur Supabase :', err);
+    }
   }
   // Titre
   const title = document.createElement('h2');
@@ -1326,8 +1435,18 @@ function renderAdminPanel() {
 }
 
 // ------------------ Initialisation ------------------ //
-// Lors du chargement initial, on récupère la liste des boutiques depuis Supabase.
-// Une fois les données chargées, on affiche le formulaire initial.
-initStoreList().then(() => {
+// Fonction d'initialisation : charge la liste des boutiques depuis Supabase puis
+// affiche le formulaire initial. En isolant cette logique dans une fonction
+// asynchrone, on s'assure que `storeList` et `stores` sont bien des tableaux
+// avant de tenter de les parcourir. Cela évite les erreurs de type `storeList.map is not a function`.
+async function init() {
+  await initStoreList();
   renderPreCheck();
+}
+
+// Démarre l'application dès que le navigateur a chargé le DOM. On utilise
+// `DOMContentLoaded` pour garantir que l'élément `#app` est présent avant
+// d'injecter du contenu.
+window.addEventListener('DOMContentLoaded', () => {
+  init();
 });
