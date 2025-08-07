@@ -302,7 +302,7 @@ let verificationDate = '';
 let periodStart = '';
 let periodEnd = '';
 
-// ================= Vérifications en Supabase ==================
+// ================= Vérifications et historique en Supabase ==================
 //
 // Afin de conserver un historique des checklists indépendamment du navigateur,
 // nous enregistrons chaque vérification dans la table "verifications" de Supabase.
@@ -366,6 +366,40 @@ async function fetchVerificationsForStore(storeId, limit = 5) {
   } catch (err) {
     console.error('Exception lors de la récupération des vérifications Supabase :', err);
     return [];
+  }
+}
+
+/**
+ * Récupère la vérification la plus récente pour une boutique donnée.
+ * @param {number} storeId - identifiant de la boutique
+ * @returns {Promise<Object|null>} - l'objet de vérification le plus récent ou null s'il n'existe pas
+ */
+async function getLatestVerification(storeId) {
+  const verifs = await fetchVerificationsForStore(storeId, 1);
+  return (Array.isArray(verifs) && verifs.length > 0) ? verifs[0] : null;
+}
+
+/**
+ * Récupère une vérification pour une boutique et une date précises.
+ * @param {number} storeId - identifiant de la boutique
+ * @param {string} date - date au format ISO AAAA-MM-JJ
+ * @returns {Promise<Object|null>} - l'objet de vérification correspondant ou null si aucun
+ */
+async function getVerificationByDate(storeId, date) {
+  try {
+    const { data, error } = await supabase
+      .from('verifications')
+      .select('*')
+      .eq('boutique_id', storeId)
+      .eq('date', date);
+    if (error) {
+      console.error('Erreur lors de la récupération de la vérification par date :', error);
+      return null;
+    }
+    return (Array.isArray(data) && data.length > 0) ? data[0] : null;
+  } catch (err) {
+    console.error('Exception lors de la récupération de la vérification par date :', err);
+    return null;
   }
 }
 
@@ -440,6 +474,29 @@ function viewExistingEntry(entry) {
 }
 
 /*
+  Affiche les résultats d'une vérification existante provenant de Supabase. Cette fonction
+  utilise l'enregistrement complet retourné par la table "verifications" et recharge
+  les variables globales avant d'appeler renderSummary().
+*/
+function viewExistingVerification(verification) {
+  if (!verification) return;
+  // Restaure les informations à partir de l'enregistrement Supabase
+  personName = verification.verificateur;
+  verificationDate = verification.date;
+  // Trouve le nom de la boutique à partir de l'ID ; si absent, utilise le champ nom_boutique
+  const storeObj = storeList.find((s) => s.id === verification.boutique_id);
+  selectedStore = storeObj ? storeObj.name : verification.nom_boutique;
+  // Extraire la période couverte en deux parties si disponible
+  const periodParts = (verification.periode_couverte || '').split(' au ');
+  periodStart = periodParts[0] || '';
+  periodEnd = periodParts[1] || '';
+  // Restaure les réponses détaillées
+  userResponses = verification.resultats || {};
+  hasSavedHistory = true;
+  renderSummary();
+}
+
+/*
   Sauvegarde une entrée d'historique dans le localStorage. L'entrée
   doit contenir store, name, date, periodStart, periodEnd. Les
   entrées existantes sont conservées. Enregistrements multiples
@@ -463,14 +520,14 @@ function saveHistoryEntry(entry) {
 */
 async function renderHistory() {
   if (!selectedStore) return null;
-  // On va d'abord tenter de récupérer les vérifications depuis Supabase
+  // On récupère les vérifications uniquement depuis Supabase
+  if (!selectedStore) return null;
   let toShow = [];
   try {
     const storeObj = storeList.find((s) => s.name === selectedStore);
     const storeId = storeObj ? storeObj.id : null;
     if (storeId) {
       const verifs = await fetchVerificationsForStore(storeId, 5);
-      // Transforme les enregistrements en structure compatible avec l'affichage
       toShow = verifs.map((v) => ({
         name: v.verificateur,
         date: v.date,
@@ -481,12 +538,9 @@ async function renderHistory() {
   } catch (err) {
     console.error('Erreur lors de la récupération de l\'historique Supabase :', err);
   }
-  // Si Supabase n'a rien retourné, on bascule sur le localStorage
+  // S'il n'y a aucune entrée, on ne retourne rien
   if (!toShow || toShow.length === 0) {
-    const history = loadHistory().filter((h) => h.store === selectedStore);
-    if (history.length === 0) return null;
-    history.reverse();
-    toShow = history.slice(0, 5);
+    return null;
   }
   const wrapper = document.createElement('div');
   wrapper.className = 'card';
@@ -849,7 +903,8 @@ function renderPreCheck() {
     renderStart();
   });
   // Activer le bouton si les trois champs sont remplis
-  const checkFormValidity = () => {
+  // La fonction de validation est asynchrone afin de consulter Supabase pour l'historique
+  const checkFormValidity = async () => {
     const selectedVal = storeSelect.value;
     // Affiche ou masque le champ code selon qu'une boutique est choisie
     if (selectedVal) {
@@ -875,29 +930,45 @@ function renderPreCheck() {
         codeMessage.style.display = 'none';
       }
     }
-    // Vérifie si une entrée existe déjà pour cette boutique et cette date
-    const duplicate = selectedVal && dateInput.value ? findEntry(selectedVal, dateInput.value) : null;
+    let duplicate = null;
+    let latest = null;
+    // Si une boutique est sélectionnée, on interroge Supabase pour voir s'il existe une
+    // vérification pour la date sélectionnée et pour récupérer la dernière vérification
+    if (selectedVal) {
+      const storeObj = storeList.find((s) => s.name === selectedVal);
+      const storeId = storeObj ? storeObj.id : null;
+      if (storeId) {
+        if (dateInput.value) {
+          duplicate = await getVerificationByDate(storeId, dateInput.value);
+        }
+        latest = await getLatestVerification(storeId);
+      }
+    }
     // Pour des raisons de sécurité, on n'affiche le bouton « consulter les résultats » que si
-    // le code d'accès est correct. Ainsi, un utilisateur ne peut pas consulter les audits
-    // d'une autre boutique sans connaître le code.
+    // le code d'accès est correct et qu'une vérification existe pour cette date.
     if (duplicate && codeOk) {
       continueBtn.disabled = true;
       viewResultsBtn.style.display = 'inline-block';
       latestInfo.style.display = 'block';
-      const latest = findLatestForStore(selectedVal);
+      // Mise à jour de la dernière vérification via Supabase
       if (latest) {
-        latestInfo.textContent = `Dernière vérification le ${latest.date} par ${latest.name} (Période couverte du ${latest.periodStart} au ${latest.periodEnd})`;
+        const periodParts = (latest.periode_couverte || '').split(' au ');
+        const pStart = periodParts[0] || '';
+        const pEnd = periodParts[1] || '';
+        latestInfo.textContent = `Dernière vérification le ${latest.date} par ${latest.verificateur} (Période couverte du ${pStart} au ${pEnd})`;
       }
-      viewResultsBtn.onclick = () => viewExistingEntry(duplicate);
+      viewResultsBtn.onclick = () => viewExistingVerification(duplicate);
     } else {
       // Pas de doublon ou code incorrect : masque le bouton consulter
       viewResultsBtn.style.display = 'none';
       // Met à jour la dernière vérification si une boutique est sélectionnée (affichée même si code pas encore saisi)
       if (selectedVal) {
-        const latest = findLatestForStore(selectedVal);
         if (latest) {
+          const periodParts = (latest.periode_couverte || '').split(' au ');
+          const pStart = periodParts[0] || '';
+          const pEnd = periodParts[1] || '';
           latestInfo.style.display = 'block';
-          latestInfo.textContent = `Dernière vérification le ${latest.date} par ${latest.name} (Période couverte du ${latest.periodStart} au ${latest.periodEnd})`;
+          latestInfo.textContent = `Dernière vérification le ${latest.date} par ${latest.verificateur} (Période couverte du ${pStart} au ${pEnd})`;
         } else {
           latestInfo.style.display = 'block';
           latestInfo.textContent = 'Aucune vérification précédente.';
@@ -910,10 +981,11 @@ function renderPreCheck() {
     continueBtn.disabled =
       nameInput.value.trim() === '' || dateInput.value === '' || selectedVal === '' || !codeOk;
   };
-  nameInput.addEventListener('input', checkFormValidity);
-  dateInput.addEventListener('input', checkFormValidity);
-  storeSelect.addEventListener('change', checkFormValidity);
-  codeInput.addEventListener('input', checkFormValidity);
+  // Les gestionnaires d'événements appellent la fonction asynchrone sans attendre le résultat
+  nameInput.addEventListener('input', () => { checkFormValidity(); });
+  dateInput.addEventListener('input', () => { checkFormValidity(); });
+  storeSelect.addEventListener('change', () => { checkFormValidity(); });
+  codeInput.addEventListener('input', () => { checkFormValidity(); });
   // Assemblage
   formCard.appendChild(title);
   formCard.appendChild(storeLabel);
@@ -942,6 +1014,7 @@ function renderPreCheck() {
 
   // Mise à jour initiale de la ligne de dernière vérification
   // Cela permet d'afficher la dernière entrée si une boutique est pré-sélectionnée (cas improbable)
+  // On appelle la fonction asynchrone sans attendre la fin
   checkFormValidity();
 }
 
@@ -1014,24 +1087,12 @@ function renderChecklist() {
 async function renderSummary() {
   currentAppState = APP_STATE.SUMMARY;
   appContainer.innerHTML = '';
-  // Sauvegarde l'entrée d'historique si ce n'est pas déjà fait
+  // Sauvegarde l'entrée sur Supabase si ce n'est pas déjà fait
   if (!hasSavedHistory && personName && verificationDate && selectedStore) {
-    // Appelle le calcul de période si elle n'a pas été définie (sécurité)
+    // Calcule la période de vérification si elle n'a pas été définie (sécurité)
     if (!periodStart || !periodEnd) {
       [periodStart, periodEnd] = computeWeekPeriod(verificationDate);
     }
-    // Enregistre l'entrée localement pour conserver un historique hors ligne
-    saveHistoryEntry({
-      store: selectedStore,
-      name: personName,
-      date: verificationDate,
-      periodStart,
-      periodEnd,
-      // Conserve également les résultats détaillés pour consultation ultérieure
-      results: JSON.parse(JSON.stringify(userResponses)),
-    });
-    hasSavedHistory = true;
-    // Tente également de sauvegarder la vérification sur Supabase pour une persistance centralisée
     try {
       const storeObj = storeList.find((s) => s.name === selectedStore);
       const storeId = storeObj ? storeObj.id : null;
@@ -1049,6 +1110,7 @@ async function renderSummary() {
     } catch (err) {
       console.error('Erreur lors de l\'enregistrement de la vérification sur Supabase :', err);
     }
+    hasSavedHistory = true;
   }
   // Titre
   const title = document.createElement('h2');
