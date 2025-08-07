@@ -19,6 +19,122 @@
 
 // ======== Données et état global ========
 
+// ============== Intégration Supabase ============== //
+// Nous utilisons Supabase pour stocker et synchroniser la liste des boutiques et leurs codes.
+// Import du client Supabase (module ES). Cette ligne sera prise en charge car index.html
+// charge ce script avec type="module".
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
+// Remplacez ces constantes par les valeurs de votre projet Supabase.
+const SUPABASE_URL = 'https://vhgfjnnwhwglirnkvacz.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZoZ2Zqbm53aHdnbGlybmt2YWN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ1MjY4ODksImV4cCI6MjA3MDEwMjg4OX0.-JMgOOD6syRvAzBexgUMjxTgNqpH8mhrrDxw0ItmS4w';
+
+// Création du client Supabase
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+/**
+ * Charge la liste des boutiques depuis Supabase. En cas d'erreur ou de résultat vide,
+ * on retourne une liste locale par défaut via loadStoreListLocal().
+ * Les enregistrements de Supabase utilisent les colonnes id, nom et code.
+ * On les transforme en objets { id, name, code } pour l'application.
+ */
+async function loadStoreList() {
+  try {
+    const { data, error } = await supabase.from('boutiques').select('*');
+    if (error) {
+      console.error('Erreur chargement boutiques Supabase :', error);
+      // en cas d'erreur, utilise la liste locale comme secours
+      return loadStoreListLocal();
+    }
+    if (!Array.isArray(data) || data.length === 0) {
+      // aucune donnée dans Supabase, retourne la liste locale par défaut
+      return loadStoreListLocal();
+    }
+    // Transforme les données Supabase en format attendu par l'application
+    return data.map((row) => ({ id: row.id, name: row.nom, code: row.code }));
+  } catch (err) {
+    console.error('Exception lors du chargement des boutiques Supabase :', err);
+    return loadStoreListLocal();
+  }
+}
+
+/**
+ * Ajoute une nouvelle boutique dans Supabase. Après insertion, recharge la liste pour mettre à jour l'interface.
+ */
+async function ajouterBoutique(nom, code) {
+  try {
+    const { error } = await supabase.from('boutiques').insert([{ nom, code }]);
+    if (error) {
+      console.error('Erreur ajout boutique Supabase :', error);
+      alert('Erreur lors de l\'ajout.');
+      return;
+    }
+    alert('Boutique ajoutée !');
+    await initStoreList();
+  } catch (err) {
+    console.error('Exception ajout boutique Supabase :', err);
+    alert('Erreur lors de l\'ajout.');
+  }
+}
+
+/**
+ * Met à jour le code d'une boutique existante dans Supabase.
+ */
+async function updateBoutique(id, newCode) {
+  try {
+    const { error } = await supabase.from('boutiques').update({ code: newCode }).eq('id', id);
+    if (error) {
+      console.error('Erreur mise à jour boutique Supabase :', error);
+      alert('Erreur lors de la mise à jour.');
+      return;
+    }
+    alert('Code mis à jour');
+    await initStoreList();
+  } catch (err) {
+    console.error('Exception mise à jour boutique Supabase :', err);
+    alert('Erreur lors de la mise à jour.');
+  }
+}
+
+/**
+ * Supprime une boutique de Supabase par son id.
+ */
+async function supprimerBoutique(id) {
+  try {
+    const { error } = await supabase.from('boutiques').delete().eq('id', id);
+    if (error) {
+      console.error('Erreur suppression boutique Supabase :', error);
+      alert('Erreur suppression.');
+      return;
+    }
+    alert('Boutique supprimée !');
+    await initStoreList();
+  } catch (err) {
+    console.error('Exception suppression boutique Supabase :', err);
+    alert('Erreur suppression.');
+  }
+}
+
+// ============== Variables globales ============== //
+// Liste dynamique des boutiques (objet {id, name, code}).
+let storeList = [];
+// Tableau contenant uniquement les noms pour le menu déroulant
+let stores = [];
+
+/**
+ * Initialise la liste des boutiques depuis Supabase et met à jour les variables globales.
+ * Appelle ensuite renderPreCheck() pour afficher l'écran de pré-sélection une fois les données prêtes.
+ */
+async function initStoreList() {
+  storeList = await loadStoreList();
+  // Vérifie que c'est un tableau pour éviter les erreurs .map()
+  stores = Array.isArray(storeList) ? storeList.map((s) => s.name) : [];
+  // Rafraîchit éventuellement l'écran actuel si on est déjà dans l'admin
+  if (currentAppState === 'adminPanel') {
+    renderAdminPanel();
+  }
+}
+
 // ----- Gestion dynamique des boutiques et des codes -----
 // Nous stockons désormais la liste des boutiques et leurs codes dans le localStorage.
 // Ceci permet d'ajouter, supprimer ou modifier des boutiques via l'interface admin et de
@@ -26,11 +142,12 @@
 // et le code d'accès associé.
 
 /**
- * Charge la liste des boutiques depuis le localStorage.
- * Si aucune liste n'est trouvée, renvoie une liste par défaut avec des codes simples.
- * Chaque objet a la forme : { name: string, code: string }
+ * Ancienne fonction de chargement des boutiques depuis le localStorage. Elle est conservée
+ * comme secours en cas d'erreur de connexion à Supabase. Si aucune liste n'est trouvée,
+ * renvoie une liste par défaut avec des codes simples. Chaque objet a la forme :
+ * { name: string, code: string }.
  */
-function loadStoreList() {
+function loadStoreListLocal() {
   try {
     const data = localStorage.getItem('iccStoreList');
     if (data) {
@@ -55,7 +172,7 @@ function loadStoreList() {
  * Sauvegarde la liste des boutiques dans le localStorage.
  * @param {Array<{name: string, code: string}>} list
  */
-function saveStoreList(list) {
+function saveStoreListLocal(list) {
   try {
     localStorage.setItem('iccStoreList', JSON.stringify(list));
   } catch (e) {
@@ -63,11 +180,9 @@ function saveStoreList(list) {
   }
 }
 
-// Liste dynamique des boutiques (objet {name, code})
-let storeList = loadStoreList();
-
-// Construit un tableau contenant uniquement les noms pour le menu déroulant
-let stores = storeList.map((s) => s.name);
+// Liste dynamique des boutiques (objet {id, name, code})
+// Initialisée dans initStoreList()
+// let storeList et let stores sont désormais déclarées en haut après l'intégration Supabase
 
 /**
  * Renvoie le code associé à une boutique donnée.
@@ -550,10 +665,8 @@ function renderPreCheck() {
   const title = document.createElement('h2');
   title.textContent = 'Informations avant la vérification';
   title.style.marginBottom = '1rem';
-  // Avant toute chose, recharge la liste des boutiques pour refléter les éventuelles
-  // modifications apportées par l'administrateur
-  storeList = loadStoreList();
-  stores = storeList.map((s) => s.name);
+  // La liste des boutiques est déjà chargée via initStoreList().
+  // stores et storeList sont mis à jour globalement lors des opérations d'administration.
 
   // Champ boutique (menu déroulant)
   const storeLabel = document.createElement('label');
@@ -1117,8 +1230,10 @@ function renderAdminPanel() {
         return;
       }
       storeList[index].code = newCode;
-      saveStoreList(storeList);
-      alert('Code mis à jour');
+      // Met à jour le code dans Supabase et localement
+      updateBoutique(storeList[index].id, newCode);
+      saveStoreListLocal(storeList);
+      // L'alerte sera affichée par updateBoutique
     });
     // Bouton supprimer la boutique
     const delBtn = document.createElement('button');
@@ -1128,12 +1243,15 @@ function renderAdminPanel() {
     delBtn.addEventListener('click', () => {
       const confirmDelete = confirm('Supprimer la boutique "' + store.name + '" ?');
       if (confirmDelete) {
-        storeList.splice(index, 1);
-        saveStoreList(storeList);
-        // Met à jour la liste des noms
-        stores = storeList.map((s) => s.name);
-        // Rafraîchit l'interface admin
-        renderAdminPanel();
+        const removed = storeList.splice(index, 1)[0];
+        // Supprime dans Supabase et met à jour localement
+        if (removed && removed.id) {
+          supprimerBoutique(removed.id);
+        }
+        saveStoreListLocal(storeList);
+        // Met à jour les noms disponibles
+        stores = Array.isArray(storeList) ? storeList.map((s) => s.name) : [];
+        // L'interface admin sera rafraîchie par initStoreList appelé dans supprimerBoutique
       }
     });
     row.appendChild(nameSpan);
@@ -1182,12 +1300,13 @@ function renderAdminPanel() {
       alert('Une boutique portant ce nom existe déjà.');
       return;
     }
+    // Ajoute la boutique via Supabase. Le rechargement de la liste sera géré
+    // par initStoreList appelé après insertion.
+    ajouterBoutique(nameVal, codeVal);
+    // Met également à jour localement en cas de secours
     storeList.push({ name: nameVal, code: codeVal });
-    saveStoreList(storeList);
-    // Met à jour les noms disponibles
-    stores = storeList.map((s) => s.name);
-    // Efface les champs et rafraîchit la page admin
-    renderAdminPanel();
+    saveStoreListLocal(storeList);
+    // Les champs seront réinitialisés lors du rafraîchissement de l'admin panel
   });
   addRow.appendChild(newNameInput);
   addRow.appendChild(newCodeInput);
@@ -1207,5 +1326,8 @@ function renderAdminPanel() {
 }
 
 // ------------------ Initialisation ------------------ //
-// Affiche le formulaire initial par défaut
-renderPreCheck();
+// Lors du chargement initial, on récupère la liste des boutiques depuis Supabase.
+// Une fois les données chargées, on affiche le formulaire initial.
+initStoreList().then(() => {
+  renderPreCheck();
+});
