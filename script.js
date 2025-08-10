@@ -1304,8 +1304,10 @@ async function renderBoutiquePanel() {
     return renderAdminLogin();
   }
   currentAppState = APP_STATE.ADMIN_BOUTIQUES;
-  // Recharge la liste des boutiques pour avoir des données à jour
-  await initStoreList();
+  // On ne recharge pas la liste ici afin d'éviter une boucle infinie.
+  // La liste est chargée lors de l'initialisation et mise à jour lors des
+  // opérations CRUD (ajout, mise à jour ou suppression), où initStoreList()
+  // s'occupe de recharger et de réafficher ce panneau si nécessaire.
   appContainer.innerHTML = '';
   const wrapper = document.createElement('div');
   wrapper.className = 'card';
@@ -1430,8 +1432,9 @@ async function renderCategoryPanel() {
   }
   currentAppState = APP_STATE.ADMIN_CATEGORIES;
   appContainer.innerHTML = '';
-  // Recharge les catégories pour avoir des données à jour
-  await initCategoryList();
+  // Ne recharge pas la liste ici pour éviter les boucles de rendu.
+  // La fonction initCategoryList() sera appelée lors des actions CRUD
+  // afin de mettre à jour les données et rafraîchir ce panneau.
   const wrapper = document.createElement('div');
   wrapper.className = 'card';
   wrapper.style.display = 'flex';
