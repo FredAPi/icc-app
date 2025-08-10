@@ -1100,6 +1100,59 @@ async function renderSummary() {
     renderPreCheck();
   });
   appContainer.appendChild(restartBtn);
+
+  // Bouton pour envoyer les résultats par email
+  const emailBtn = document.createElement('button');
+  emailBtn.className = 'primary-button';
+  emailBtn.textContent = 'Envoyer les résultats par mail';
+  emailBtn.style.marginTop = '0.75rem';
+  emailBtn.addEventListener('click', () => {
+    sendResultsByEmail();
+  });
+  appContainer.appendChild(emailBtn);
+}
+
+/**
+ * Génère un email (lien mailto) contenant le résumé des résultats de la
+ * checklist et ouvre le client de messagerie par défaut. Le sujet inclut
+ * la boutique et la date de vérification si disponibles. Le corps du
+ * message contient l'auteur, la progression, et le détail des réponses
+ * pour chaque catégorie (Conforme, Non conforme, Non vérifié) ainsi que
+ * les commentaires éventuels.
+ */
+function sendResultsByEmail() {
+  const progress = computeProgress();
+  const completeText = progress === 100 ? 'Checklist complétée' : `Checklist complétée à ${progress}%`;
+  // Sujet de l'email
+  let subject = 'Résultats checklist ICC';
+  if (selectedStore) subject += ` - ${selectedStore}`;
+  if (verificationDate) subject += ` - ${verificationDate}`;
+  // Corps du message
+  let body = '';
+  if (personName) {
+    body += `Vérification effectuée par ${personName}`;
+    if (verificationDate) body += ` le ${verificationDate}`;
+    body += '\n\n';
+  }
+  body += `${completeText}\n\n`;
+  categoriesList.forEach((cat) => {
+    if (cat.is_active === false) return;
+    const resp = userResponses[cat.id];
+    let statusText = 'Non vérifié';
+    if (resp) {
+      if (resp.status === 'done') statusText = 'Conforme';
+      else if (resp.status === 'error') statusText = 'Non conforme';
+    }
+    body += `- ${cat.nom_categorie} : ${statusText}`;
+    if (resp && resp.comment) {
+      body += ` (Commentaire : ${resp.comment})`;
+    }
+    body += '\n';
+  });
+  body += '\nCordialement,';
+  const mailtoLink = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  // Ouvre le lien mailto dans le navigateur
+  window.location.href = mailtoLink;
 }
 
 /**
