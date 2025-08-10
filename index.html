@@ -1,38 +1,21 @@
 <!DOCTYPE html>
 <html lang="fr">
-  <head>
-    <meta charset="UTF-8" />
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ICC Checker</title>
-    <link rel="stylesheet" href="styles.css" />
-    <!-- Import Google Font for a plus moderne look -->
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet" />
-    <!--
-      Ce fichier HTML constitue la structure principale de votre application de
-      contrôle ICC. Il s'agit d'une application simple qui ne nécessite
-      aucune installation serveur : vous pouvez l'ouvrir directement dans
-      votre navigateur web. Les interactions sont gérées dans script.js.
-
-      Pour personnaliser la liste des éléments à vérifier ou les textes,
-      modifiez les tableaux dans script.js (voir la variable `checkItems`).
-    -->
-  </head>
-  <body>
-    <header>
-      <link rel="icon" href="favicon.png" type="image/png">
-      <h1>ICC Checker</h1>
-      <p class="subtitle">Anticipez votre ICC en toute tranquilité </p>
-    </header>
-    <main id="app">
-      <!-- Le contenu dynamique sera injecté par JavaScript -->
-    </main>
-    <footer>
-      <p>
-        &copy; 2025 - ICC Checker | Créé avec ♥ pour simplifier vos audits
-      </p>
-    </footer>
-    <!-- Charge le script principal en tant que module ES afin d'activer les imports (Supabase) -->
-    <script type="module" src="script.js"></script>
-  </body>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ICC Checker</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>ICC Checker</h1>
+    <p class="subtitle">Anticipez votre ICC en toute tranquilité</p>
+  </header>
+  <main id="app"></main>
+  <footer>
+    © 2025 - ICC Checker | Créé avec ♥ pour simplifier vos audits
+  </footer>
+  <!-- Charge le script principal en mode module pour pouvoir utiliser les imports ES -->
+  <script type="module" src="script.js"></script>
+</body>
 </html>
