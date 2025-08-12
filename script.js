@@ -330,18 +330,17 @@ async function enregistrerVerification(boutiqueId, nomBoutique, verificateur, da
     ]);
     if (error) {
       console.error('Erreur enregistrement vérification :', error);
+      return { ok: false, error };
     } else {
       console.log('Vérification enregistrée');
+      return { ok: true };
     }
   } catch (e) {
     console.error('Exception enregistrement vérification :', e);
+    return { ok: false, error: e };
   }
 }
 
-/**
- * Récupère la dernière vérification pour une boutique donnée. Retourne un
- * objet contenant date, verificateur, periode_couverte et resultats.
- */
 async function getLatestVerification(storeId) {
   try {
     const { data, error } = await supabase
@@ -526,15 +525,43 @@ async function renderStart() {
   } catch (err) {
     console.error('Erreur lors de l\'affichage de l\'historique :', err);
   }
-  // Bouton pour démarrer la checklist
-  const startBtn = document.createElement('button');
-  startBtn.className = 'primary-button';
-  startBtn.textContent = 'Démarrer la checklist';
-  startBtn.style.marginTop = '1rem';
-  startBtn.addEventListener('click', async () => {
-    await renderChecklist();
-  });
-  introCard.appendChild(startBtn);
+  
+  // Bouton pour démarrer la checklist OU consulter si doublon
+  try {
+    const dup = await getVerificationByDate(selectedStoreId, verificationDate);
+    if (dup) {
+      const info = document.createElement('p');
+      info.style.marginTop = '1rem';
+      info.style.color = 'var(--danger-color)';
+      info.textContent = 'Un audit existe déjà pour cette boutique et cette date. Vous pouvez uniquement consulter les résultats.';
+      introCard.appendChild(info);
+      const viewBtn = document.createElement('button');
+      viewBtn.className = 'primary-button';
+      viewBtn.textContent = 'Consulter les résultats';
+      viewBtn.style.marginTop = '1rem';
+      viewBtn.addEventListener('click', () => viewExistingVerification(dup));
+      introCard.appendChild(viewBtn);
+    } else {
+      const startBtn = document.createElement('button');
+      startBtn.className = 'primary-button';
+      startBtn.textContent = 'Démarrer la checklist';
+      startBtn.style.marginTop = '1rem';
+      startBtn.addEventListener('click', async () => {
+        await renderChecklist();
+      });
+      introCard.appendChild(startBtn);
+    }
+  } catch (e) {
+    console.error('Erreur vérification doublon :', e);
+    const startBtn = document.createElement('button');
+    startBtn.className = 'primary-button';
+    startBtn.textContent = 'Démarrer la checklist';
+    startBtn.style.marginTop = '1rem';
+    startBtn.addEventListener('click', async () => {
+      await renderChecklist();
+    });
+    introCard.appendChild(startBtn);
+  }
   appContainer.appendChild(introCard);
 }
 
@@ -545,19 +572,17 @@ async function renderStart() {
  * d'éléments de catégories et des réponses fournies.
  */
 function computeProgress() {
-  const total = categoriesList.length;
+  const active = Array.isArray(categoriesList) ? categoriesList.filter((c) => c && c.is_active !== false) : [];
+  const total = active.length;
   if (total === 0) return 0;
   let completed = 0;
-  categoriesList.forEach((cat) => {
+  active.forEach((cat) => {
     const resp = userResponses[cat.id];
-    if (resp && resp.status && resp.status !== 'todo') completed++;
+    if (resp && (resp.status === 'done' || resp.status === 'error')) completed++;
   });
   return Math.round((completed / total) * 100);
 }
 
-/**
- * Retourne la classe CSS de statut pour un élément (done, error ou todo).
- */
 function getStatusClass(catId) {
   const resp = userResponses[catId];
   if (!resp) return 'todo';
@@ -922,6 +947,22 @@ async function renderPreCheck() {
  * final est activé.
  */
 async function renderChecklist() {
+  // Sécurité: si un audit existe déjà, on force la consultation
+  try {
+    const dup = await getVerificationByDate(selectedStoreId, verificationDate);
+    if (dup) {
+      alert('Un audit existe déjà pour cette boutique et cette date. Consultation uniquement.');
+      return await viewExistingVerification(dup);
+    }
+  } catch (e) {
+    console.error('Erreur vérification doublon (renderChecklist):', e);
+  }
+
+  const dup = await getVerificationByDate(selectedStoreId, verificationDate);
+  if (dup) {
+    alert('Un audit existe déjà pour cette boutique et cette date. Consultation uniquement.');
+    return viewExistingVerification(dup);
+  }
   currentAppState = APP_STATE.CHECKLIST;
   appContainer.innerHTML = '';
   // Progression
@@ -997,14 +1038,23 @@ async function renderSummary() {
     Object.keys(userResponses).forEach((id) => {
       resultsObj[id] = userResponses[id];
     });
-    await enregistrerVerification(
+    const saveRes = await enregistrerVerification(
       selectedStoreId,
       selectedStore,
       personName,
       verificationDate,
       periodeTexte,
-      resultsObj,
+      resultsObj
     );
+    if (!saveRes || !saveRes.ok) {
+    const msg = (saveRes && saveRes.error && (saveRes.error.code || saveRes.error.message)) || '';
+    if (msg.includes('23505') || /duplicate key|unique constraint/i.test(msg)) {
+      const dup = await getVerificationByDate(selectedStoreId, verificationDate);
+      alert('Un audit existe déjà pour cette boutique et cette date. Consultation uniquement.');
+      return viewExistingVerification(dup);
+    }
+      if (saveRes && saveRes.error && /(duplicate key|unique constraint|23505)/i.test(saveRes.error.message || '')) { const dup = await getVerificationByDate(selectedStoreId, verificationDate); alert('Un audit existe déjà pour cette boutique et cette date. Consultation uniquement.'); return await viewExistingVerification(dup); } else { alert('Échec de l\'enregistrement dans Supabase.\n\nDétails : ' + (saveRes && saveRes.error ? (saveRes.error.message || JSON.stringify(saveRes.error)) : 'inconnu')); }
+    }
   }
   // Titre
   const title = document.createElement('h2');
@@ -1377,7 +1427,7 @@ async function renderBoutiquePanel() {
   storeList.forEach((store) => {
     const row = document.createElement('div');
     row.style.display = 'grid';
-    row.style.gridTemplateColumns = '3fr 2fr auto auto';
+    row.style.gridTemplateColumns = '2fr 3fr auto 80px auto auto';
     row.style.alignItems = 'center';
     row.style.columnGap = '0.5rem';
     row.style.marginBottom = '0.5rem';
@@ -1424,7 +1474,7 @@ async function renderBoutiquePanel() {
   // Ajout
   const addRow = document.createElement('div');
   addRow.style.display = 'grid';
-  addRow.style.gridTemplateColumns = '3fr 2fr auto';
+  addRow.style.gridTemplateColumns = '2fr 3fr auto 80px auto';
   addRow.style.alignItems = 'center';
   addRow.style.columnGap = '0.5rem';
   addRow.style.marginTop = '1rem';
@@ -1506,7 +1556,7 @@ async function renderCategoryPanel() {
     // 6 colonnes : nom, description, icône, ordre, enregistrer, supprimer. Les deux dernières colonnes
     // utilisent "auto" afin de s'ajuster au contenu des boutons. Cela garantit
     // que tous les éléments tiennent sur une seule ligne et restent alignés.
-    row.style.gridTemplateColumns = '2fr 3fr 1fr 1fr auto auto';
+    row.style.gridTemplateColumns = '2fr 3fr auto 80px auto auto';
     row.style.alignItems = 'center';
     row.style.columnGap = '0.5rem';
     row.style.marginBottom = '0.5rem';
@@ -1530,6 +1580,9 @@ async function renderCategoryPanel() {
     iconInput.value = cat.icone || '';
     iconInput.placeholder = 'Icône (emoji)';
     iconInput.style.padding = '0.4rem';
+    iconInput.style.width = '3em';
+    iconInput.style.textAlign = 'center';
+    iconInput.maxLength = 1;
     iconInput.style.borderRadius = 'var(--border-radius)';
     iconInput.style.border = '1px solid #ccc';
     // Ordre
@@ -1585,7 +1638,7 @@ async function renderCategoryPanel() {
   // Ligne d'ajout
   const addRow = document.createElement('div');
   addRow.style.display = 'grid';
-  addRow.style.gridTemplateColumns = '2fr 3fr 1fr 1fr auto';
+  addRow.style.gridTemplateColumns = '2fr 3fr auto 80px auto';
   addRow.style.alignItems = 'center';
   addRow.style.columnGap = '0.5rem';
   addRow.style.marginTop = '1rem';
@@ -1605,6 +1658,9 @@ async function renderCategoryPanel() {
   newIcon.type = 'text';
   newIcon.placeholder = 'Icône (emoji)';
   newIcon.style.padding = '0.4rem';
+  newIcon.style.width = '3em';
+  newIcon.style.textAlign = 'center';
+  newIcon.maxLength = 1;
   newIcon.style.borderRadius = 'var(--border-radius)';
   newIcon.style.border = '1px solid #ccc';
   const newOrder = document.createElement('input');
